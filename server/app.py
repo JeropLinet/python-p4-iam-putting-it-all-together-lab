@@ -26,16 +26,19 @@ class Signup(Resource):
 
         new_user.password_hash=password
 
-        
-        db.session.add(new_user)
-        db.session.commit()
+        try:
+         db.session.add(new_user)
+         db.session.commit()
+        except IntegrityError:
+           db.session.rollback()
+           return {'error':'Username already exists'},400
         return{'message':'User created successfully'},201
     
     
 
 class CheckSession(Resource):
     def get(self):
-        user_id=session['user_id']
+        user_id=session.get('user_id')
         if user_id:
             user=User.query.filter(User.id ==user_id).first()
             return user.to_dict(),200
@@ -48,28 +51,29 @@ class Login(Resource):
         username=data.get('username')
         password=data.get('password')
 
-        user=User.query.filter(User.username== username).first()
+        user=User.query.filter_by(username=username).first()
 
-        if user and user.authonticate(password):
+        if user and user.authenticate(password):
             session['user_id']=user.id
             return make_response(user.to_dict(),200)
-        return {'error':'Inalid username or password'},401
+        return {'error':'Invalid username or password'},401
 
 class Logout(Resource):
     def delete(self):
-        user_id=session['user_id']
-        if user_id:
-            session.clear()
-            return {},204
-        return make_response({'error':'Unauthorised.'},401)
+        user_id=session.get('user_id')
+        if user_id is None:
+            return make_response({'error':'Unauthorized.'},401)
+        session.clear()
+        return {},204
+        
 
 class RecipeIndex(Resource):
     def get(self):
-        user_id=session['user_id']
+        user_id=session.get('user_id')
         if user_id:
-            recipes=Recipe.query.all()
+            recipes=Recipe.query.filter_by(user_id=user_id).all()
             return make_response([recipe.to_dict()for recipe in recipes],200)
-        return make_response({'error':'Unauthorises'},401)
+        return make_response({'error':'Unauthorized'},401)
     
     def post(self):
         user_id=session.get('user_id')
@@ -81,8 +85,8 @@ class RecipeIndex(Resource):
         instructions=data.get('instructions')
         minutes_to_complete=data.get('minutes_to_complete')
 
-        if not title or len(instructions)<50:
-            return {'error':'Title and Instructions must be present with atleast 50 characters'},422
+        if not title or not instructions or len(instructions)<50:
+            return {'error':'Title and Instructions must be present with at least 50 characters'},422
         
         new_recipe=Recipe(
             title=title,
